@@ -1,15 +1,12 @@
 import argparse
 import random
 from contextlib import redirect_stdout
-from time import time
 
 import numpy as np
 from matplotlib import pyplot as plt
+from matplotlib.colors import ListedColormap
 from sklearn import metrics
-from sklearn import svm
 from sklearn.cluster import KMeans
-from sklearn.metrics import precision_recall_fscore_support as score
-from sklearn.model_selection import GridSearchCV
 
 
 def read_data(filename):
@@ -45,49 +42,6 @@ def plotData(x, y, title=None, x_label=None, y_label=None):
     plt.show()
 
 
-def getSVMBestEstimator(train_data, train_labels):
-    t0 = time()
-    # Create a dictionary of possible parameters
-    params_grid = {'C': [0.001, 0.01, 0.1, 1, 10, 100],
-                   'gamma': [0.0001, 0.001, 0.01, 0.1],
-                   'kernel': ['linear', 'rbf']}
-
-    # Create the GridSearchCV object
-    grid_clf = GridSearchCV(svm.SVC(class_weight='balanced'), params_grid)
-
-    # Fit the data with the best possible parameters
-    grid_clf = grid_clf.fit(train_data, train_labels)
-
-    # Print the best estimator with it's parameters
-    print(grid_clf.best_estimator_)
-    print("Best estimator done in %0.3fs" % (time() - t0))
-    return grid_clf
-
-
-def testSVM(train_data, train_labels, test_data, test_labels):
-    if args.best_estimator:
-        # Get svm with best estimators (Comment out if not necessary)
-        clf = getSVMBestEstimator(train_data, train_labels)
-    else:
-        # Create a svm Classifier
-        clf = svm.SVC(C=0.1, class_weight='balanced', gamma=0.0001, kernel='linear')  # Linear Kernel
-        # Train SVM using the training sets
-        clf.fit(train_data, train_labels)
-
-    # Predict the response for test dataset
-    y_pred = clf.predict(test_data)
-    # Model Accuracy calculated
-    plotData(test_data, y_pred, title="SVM Result")
-    print("---------SVM---------")
-    print("SVM Accuracy:", metrics.accuracy_score(test_labels, y_pred))
-    precision, recall, fscore, support = score(test_labels, y_pred)
-    # print('precision: {}'.format(precision))
-    # print('recall: {}'.format(recall))
-    print('fscore: {}'.format(fscore))
-    # print('support: {}'.format(support))
-    print("---------SVM---------")
-
-
 def purity_score(y_true, y_pred):
     """
     K-Means purity calculator
@@ -111,6 +65,73 @@ def testKMeans(train_data, train_labels, test_data, test_labels):
     print("K-Means Purity: ", purity_score(y_true=test_labels, y_pred=y_pred))
     # print("K-Means Rand-index score: ", rand_index_score(test_labels, y_pred))
     print("---------KMEANS---------")
+
+
+'''
+Perceptron algo
+'''
+
+
+class Perceptron(object):
+    def __init__(self, rate=0.01, niter=10):
+        self.rate = rate
+        self.niter = niter
+
+    def fit(self, X, y):
+        """Fit training data
+        X : Training vectors, X.shape : [#samples, #features]
+        y : Target values, y.shape : [#samples]
+        """
+
+        # weights
+        self.weight = np.zeros(1 + X.shape[1])
+
+        # Number of misclassifications
+        self.errors = []  # Number of misclassifications
+
+        for i in range(self.niter):
+            err = 0
+            for xi, target in zip(X, y):
+                delta_w = self.rate * (target - self.predict(xi))
+                self.weight[1:] += delta_w * xi
+                self.weight[0] += delta_w
+                err += int(delta_w != 0.0)
+            self.errors.append(err)
+        return self
+
+    def net_input(self, X):
+        """Calculate net input"""
+        return np.dot(X, self.weight[1:]) + self.weight[0]
+
+    def predict(self, X):
+        """Return class label after unit step"""
+        return np.where(self.net_input(X) >= 0.0, 1, -1)
+
+
+def plot_decision_regions(X, y, classifier, resolution=0.02):
+    # setup marker generator and color map
+    markers = ('s', 'x', 'o', '^', 'v')
+    colors = ('red', 'blue', 'lightgreen', 'gray', 'cyan')
+    cmap = ListedColormap(colors[:len(np.unique(y))])
+
+    # plot the decision surface
+    x1_min, x1_max = X[:, 0].min() - 1, X[:, 0].max() + 1
+    x2_min, x2_max = X[:, 1].min() - 1, X[:, 1].max() + 1
+    xx1, xx2 = np.meshgrid(np.arange(x1_min, x1_max, resolution),
+                           np.arange(x2_min, x2_max, resolution))
+    Z = classifier.predict(np.array([xx1.ravel(), xx2.ravel()]).T)
+    Z = Z.reshape(xx1.shape)
+    plt.contourf(xx1, xx2, Z, alpha=0.4, cmap=cmap)
+    plt.xlim(xx1.min(), xx1.max())
+    plt.ylim(xx2.min(), xx2.max())
+
+    # plot class samples
+    for idx, cl in enumerate(np.unique(y)):
+        plt.scatter(x=X[y == cl, 0], y=X[y == cl, 1],
+                    alpha=0.8, c=cmap(idx),
+                    marker=markers[idx], label=cl)
+    plt.legend(loc='upper left')
+    plt.show()
 
 
 def tests():
@@ -137,14 +158,17 @@ def tests():
         "both_test_labels": labels_test
     }
 
-    # svm_test_2(data["both_train_data"], data["both_train_labels"], data["both_test_data"], data["both_test_labels"])
     # K-MEANS TEST
     testKMeans(data["both_train_data"], data["both_train_labels"], data["both_test_data"], data["both_test_labels"])
+
+    pn = Perceptron(0.01, 100)
+    pn.fit(dataset, labels)
+    plot_decision_regions(data['both_test_data'], data['both_test_labels'], classifier=pn)
 
 
 def main():
     # for i in range(10):
-    tests_2()
+    tests()
 
 
 parser = argparse.ArgumentParser(description='Test Some Linear Classifier for BLG527E (ML) Class of ITU \'21 ')
@@ -153,7 +177,7 @@ parser.add_argument("-f", "--file-output", action="store_true",
 parser.add_argument("-b", "--best-estimator", action="store_true",
                     help="While testing svm, using best estimator instead of pre-defined ones.(Takes more time)")
 parser.add_argument("-c", "--cmd", action="store_true",
-                    help="Run from cmd")
+                    help="Run from cmd (without an ide)")
 args = parser.parse_args()
 
 if __name__ == '__main__':
